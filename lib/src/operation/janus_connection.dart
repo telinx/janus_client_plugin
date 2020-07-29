@@ -35,6 +35,12 @@ const Map<String, dynamic> _iceServers = {
     ]
   };
 
+/// webrtc步骤
+/// 1. 获得本地媒体
+/// 2. 创建对等连接
+/// 3. 关联媒体和数据
+/// 4. 交换会话描述 createOffer createAnswer sdp
+
 /// janus连接对象
 class JanusConnection {
 
@@ -42,7 +48,9 @@ class JanusConnection {
 
   RTCPeerConnection _connection;  // 当前peer连接对象
 
-  RTCVideoRenderer remoteRender;  // 远程媒体数据渲染器
+  RTCVideoRenderer remoteRenderer;  // 远程媒体数据渲染器
+
+  MediaStream remoteStream;  // 远程媒体数据渲染器
 
   List<RTCIceServer> iceServers;
 
@@ -50,19 +58,26 @@ class JanusConnection {
 
   OnIceCandidateCallback onIceCandidate;
 
+
   JanusConnection({@required this.handleId, this.iceServers}) {
-    this.remoteRender = RTCVideoRenderer();
-    this.remoteRender.mirror = true;
+    this.remoteRenderer = RTCVideoRenderer();
+    this.remoteRenderer.mirror = true;
   }
 
   /// init连接，init远程媒体数据渲染器
-  void initConnection() async{
-    await this.remoteRender.initialize();
+  Future<void> initConnection() async{
+    await this.remoteRenderer.initialize();
     await createConnection();
   }
 
+  void disConnect(){
+    this.remoteStream?.dispose();
+    this.remoteRenderer?.dispose();
+    this._connection?.dispose();
+  }
+
   /// 设置本地会话描述添加到RTCPeerConnection
-  Future<RTCSessionDescription> setLocalDescription({Map<String, dynamic> constraints = _constraints}) async {
+  Future<RTCSessionDescription> createOffer({Map<String, dynamic> constraints = _constraints}) async {
     RTCSessionDescription sdp = await this._connection.createOffer(constraints);
     this._connection.setLocalDescription(sdp);
     return sdp;
@@ -78,6 +93,14 @@ class JanusConnection {
   /// 将本地流添加到RTCPeerConnection
   void addLocalStream(MediaStream localStream) {
     this._connection.addStream(localStream);
+  }
+
+  /// 回复sdp
+  Future<RTCSessionDescription> createAnswer({Map<String, dynamic> constraints = _constraints}) async {
+    RTCSessionDescription sdp = await this._connection.createAnswer(constraints);
+    // 通过setLocalDescription想浏览器通知会话描述，并将其发送之远程对等端，从而发起呼叫
+    this._connection.setLocalDescription(sdp);
+    return sdp;
   }
 
   Future createConnection() async{

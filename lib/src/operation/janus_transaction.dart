@@ -15,7 +15,7 @@ class JanusTransaction {
   TransactionError error;             // 事务失败之后的执行方法
 
   TransactionDestoryed destoryed;     //　事务销毁之后的执行
-
+  
   JanusTransaction({@required this.tid});
 
 }

@@ -1,10 +1,14 @@
 
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
+import 'package:random_string/random_string.dart';
 import 'package:web_socket_channel/io.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../operation/janus_handle.dart';
 import '../operation/janus_transaction.dart';
@@ -22,7 +26,7 @@ import '../operation/janus_transaction.dart';
 /// 11.Janus进行媒体数据转发。
 
 /// 1.websocket创建连接，keepAlive,预留处理回调信息handlemessage
-/// 2.创建会话，发送janus create，success接收数据
+/// 2.创建会话create，发送janus create，success接收数据
 /// 3.attach关联插件
 /// 4.attach关联成功，加入房间joinroom
 /// 5.创建offer(janus = message)  onPublisherJoined
@@ -30,23 +34,42 @@ import '../operation/janus_transaction.dart';
 /// 7.发送ice，trickle
 ///
 
-typedef Void OnMessage(JanusHandle handle, Map msg, Map jsep, JanusHandle feedHandle);
+typedef Void OnMessage(JanusHandle handle, Map plugin, Map jsep, JanusHandle feedHandle);
 
 /// janus信令处理
 class JanusSignal {
 
   String _kJanus = 'janus';
   
-  int sessionId = -1;
+  int _sessionId = -1;
 
   // websocket服务器地址
-  String url;                     
+  String _url;   
+
+  // websocket服务器密钥
+  String _apiSecret;
+
+  // websocket服务器通讯token
+  String _token;
+
+  // 是否需要使用
+  bool _withCredentials = false;
 
   // websocket信息回调处理
-  OnMessage onMessage;
+  OnMessage _onMessage;
 
   // websocket channel
   IOWebSocketChannel _channel;
+
+  Stream<dynamic> _stream;
+
+  WebSocketSink _sink;
+
+  // 显示昵称
+  String _display = 'janus';
+
+  // keepalive时间
+  int _refreshInterval = 20;
 
   // janus事务集合
   Map<dynamic, JanusTransaction> _transMap = <dynamic, JanusTransaction>{};
@@ -60,28 +83,68 @@ class JanusSignal {
   JsonEncoder _encoder = JsonEncoder();
   
   JsonDecoder _decoder = JsonDecoder();
-  
-  factory JanusSignal() => _getInstance();
 
-  static JanusSignal get instance => _getInstance();
+  set sessionId(int sessionId) => this._sessionId = sessionId;
+
+  set url(String url) => this._url = url;
+
+  set apiSecret(String apiSecret) => this._apiSecret = apiSecret;
+
+  set token(String token) => this._token = token;
+
+  set withCredentials(bool withCredentials) => this._withCredentials = withCredentials;
+
+  set onMessage(OnMessage onMessage) => this._onMessage = onMessage;
+
+  set display(String display) => this._display = display;
+
+  set refreshInterval(int refreshInterval) => this._refreshInterval = refreshInterval;
+
+  dynamic get _apiMap => this._withCredentials ? this._apiSecret != null ? {"apisecret": this._apiSecret} : {} : {};
+
+  dynamic get _tokenMap => this._withCredentials ? this._token != null ? {"token": this._token} : {} : {};
+
+  JanusSignal._();
 
   static JanusSignal _instance;
-
-  JanusSignal._internal() {/**/}
-
   /// 单例
-  static JanusSignal _getInstance() {
+  static JanusSignal getInstance({
+    @required String url,
+    String apiSecret,
+    String token,
+    bool withCredentials,
+    String display,
+    int refreshInterval = 20,
+  }) {
     if (_instance == null) {
-      _instance = JanusSignal._internal();
+      _instance = JanusSignal._();
     }
+    if(url != null) _instance.url = url;
+    if(apiSecret != null) _instance.apiSecret = apiSecret;
+    if(token != null) _instance.token = token;
+    if(withCredentials != null) _instance.withCredentials = withCredentials;
+    if(display != null) _instance.display = display;
+    if(refreshInterval != null) _instance.refreshInterval = refreshInterval;
+    
     return _instance;
   }
 
   
   /// 信令获得连接
-  void connect({@required String url}){
-
+  void connect(){
+    Iterable<String> it = ['janus-protocol'];
+    this._channel = IOWebSocketChannel.connect(this._url, protocols: it);
+    this._sink = this._channel.sink;
+    // this._stream = this._channel.stream.asBroadcastStream();
+    this._stream = this._channel.stream;
+    this._stream.listen((message) {
+      debugPrint('$_kJanus receieve: $message');
+      this.handleMessage(this._decoder.convert(message));
+    }).onDone(() {
+      print('closed　by server');
+    });
   }
+
 
 
   /// websocket断开链接
@@ -90,57 +153,210 @@ class JanusSignal {
   }
 
   /// 发送message给janus
-  void sendMessage({Map body, Map jsep, int handleId,}){
+  void sendMessage({
+    @required int handleId,
+    @required Map body, 
+    Map jsep, 
+  }){
+
+    String transaction = randomAlphaNumeric(12);
+    Map<String, dynamic> msgMap = {
+      "janus": "message",
+      "body": body,
+      "transaction": transaction,
+      "session_id": this._sessionId,
+      "handle_id": handleId
+    };
+    if(jsep != null){
+      msgMap["jsep"] = jsep;
+    }
+    this.send(msgMap);
 
   }
 
   /// 公共消息发送
   void send(Map map) {
 
+    String json = this._encoder.convert(map);
+    debugPrint(json);
+    this._sink.add(json);
 
   }
 
   /// 创建会话
-  void createSession({TransactionSuccess success, TransactionError error}){
+  void createSession({@required TransactionSuccess success, @required TransactionError error}){
+    String transaction = randomAlphaNumeric(12);
+    JanusTransaction jt = JanusTransaction(tid: transaction);
 
+    jt.success = (Map data){
+      debugPrint('createSession seuccess');
+      this.sessionId = data['data']['id'];
+      // this.keepAlive();
+      success(data);
+    };
+    jt.error = error;
+
+    this._transMap[transaction] = jt;
+    Map<String, dynamic> createMap = {
+      'janus': 'create',
+      'transaction': transaction,
+      ...this._apiMap,
+      ...this._tokenMap,
+    };
+    this.send(createMap);
   }
 
   /// attach关联janus插件
   void attach({
-    String plugin,
-    String opaqueId,
-    TransactionSuccess success,
-    TransactionError error,
+    @required String plugin,
+    @required String opaqueId,
+    @required TransactionSuccess success,
+    @required TransactionError error,
   }){
+    String transaction = randomAlphaNumeric(12);
+    JanusTransaction jt = JanusTransaction(tid: transaction);
 
+    jt.success = success;
+    jt.error = error;
+    _transMap[transaction] = jt;
+
+    Map<String, dynamic> attachMap = {
+      "janus": "attach",
+      "plugin": plugin,
+      "transaction": transaction,
+      "session_id": this._sessionId,
+      "opaque_id": opaqueId
+    };
+    this.send(attachMap);
   }
 
   ///　加入房间
   void joinRoom({
-    Map<String, dynamic> data,
-    Map body,
+    @required Map<String, dynamic> data,
+    @required Map<String, dynamic> body,
+    String display,
+    int feedId,
     OnJoined onJoined,
     OnRemoteJsep onRemoteJsep,
     OnLeaving onLeaving,
-    int feedId,
-    String display,
   }) {
+    JanusHandle handle = JanusHandle();
+    handle.handleId = data['data']['id']; // sessionId
+    handle.onJoined = onJoined;
+    handle.onRemoteJsep = onRemoteJsep;
+    handle.onLeaving = onLeaving;
+    handle.display = display ?? this._display;
 
+    if(feedId != null){
+      handle.feedId = feedId;
+      this._feedMap[feedId] = handle;
+    }
+    
+    this._handleMap[handle.handleId] = handle;
+    this.sendMessage(body: body, handleId: handle.handleId);
   }
 
   ///　发送ice给janus
-  void trickleCandidata({int handleId,Map<String, dynamic> candidata,}){
-
+  void trickleCandidata({
+    @required int handleId, 
+    @required Map<String, dynamic> candidate,
+  }){
+     Map trickleMap = {
+      "janus": "trickle",
+      "candidate": candidate,
+      "transaction": randomNumeric(12),
+      "session_id": this._sessionId,
+      "handle_id": handleId,
+    };
+    this.send(trickleMap);
   }
 
   /// 心跳
   void keepAlive(){
 
+    Map<String, dynamic> aliveMap = {
+      'janus': 'keepalive',
+      'session_id': this._sessionId,
+      ...this._apiMap,
+      ...this._tokenMap,
+    };
+    Timer.periodic(Duration(seconds: this._refreshInterval), (timer) { 
+      aliveMap['transaction'] = randomNumeric(12);
+      this.send(aliveMap);
+    });
+    
   }
 
   /// 处理janus服务器返回消息
   void handleMessage(Map<dynamic, dynamic> message) {
+    String janus = message[this._kJanus];
+    switch(janus){
+      case 'success': {
+        debugPrint('$_kJanus handleMessage success: $message');
+        String transaction = message['transaction'];
+        JanusTransaction jt = this._transMap[transaction];
+        if(null != jt && jt.success != null) {
+          jt.success(message);
+        }
+        _transMap.remove(transaction);
+      }
+      break;
+
+      case 'error': {
+        debugPrint('$_kJanus handleMessage error: $message');
+        String transaction = message['transaction'];
+        JanusTransaction jt = this._transMap[transaction];
+        if(null != jt && jt.error != null) {
+          jt.error(message);
+        }
+        _transMap.remove(transaction);
+      }
+      break;
+
+      case 'ack': {
+        debugPrint('$_kJanus handleMessage ack: $message');
+      }
+      break;
+
+      case 'event': {
+        debugPrint('$_kJanus handleMessage event: $message');
+        JanusHandle handle = this._handleMap[message['sender']];
+        if(handle == null){
+          print('missing handle');
+          break;
+        }
+        Map<String, dynamic> plugin = message['plugindata']['data'];
+        JanusHandle feedHandle;
+        if(plugin['leaving'] != null){  // 有人离开
+          feedHandle = this._feedMap[plugin['leaving']];
+        }
+        this._onMessage(handle, plugin, message["jsep"], feedHandle);
+
+        if(plugin['leaving'] != null){  // 有人离开,移除handle
+          this._feedMap.remove(plugin['leaving']);
+          this._handleMap.remove(message['sender']);
+        }
+      }
+      break;
+
+      case 'detached': {  // 插件从Janus会话detach的通知，释放了一个插件句柄
+        debugPrint('$_kJanus handleMessage detached: $message');
+        JanusHandle handle = this._handleMap[message['sender']];
+        handle?.onLeaving(handle);
+      }
+      break;
+
+      default: {
+        debugPrint('$_kJanus handleMessage defalut: $message');
+        JanusHandle handle = this._handleMap[message['sender']];
+        if(handle == null){
+          print('missing handle');
+        }
+      }
+    }
 
   }
+
+  
 
 }
