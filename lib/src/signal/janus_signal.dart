@@ -84,6 +84,8 @@ class JanusSignal {
   
   JsonDecoder _decoder = JsonDecoder();
 
+  get sessionId => this._sessionId;
+
   set sessionId(int sessionId) => this._sessionId = sessionId;
 
   set url(String url) => this._url = url;

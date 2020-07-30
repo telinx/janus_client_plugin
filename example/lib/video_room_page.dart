@@ -111,8 +111,16 @@ class _VideoRoomPage extends State<VideoRoomPage>{
       List<dynamic> publishers = plugin['publishers'];
       if(publishers != null && publishers.length > 0) {
         publishers.forEach((publisher) {
+
           int feed = publisher['id'];
           String display = publisher['display'];
+          debugPrint('stop1====>${this._signal.sessionId}==$feed==${this.selfHandleId}===${handle.handleId}');
+          if(this.selfHandleId != handle.handleId && this.peerConnectionMap[handle.handleId] != null) {
+            debugPrint('stop2====>${this._signal.sessionId}==$feed==${this.selfHandleId}===${handle.handleId}');
+            return;
+          }
+
+          
           this._signal.attach(
             plugin: this.pluginName, 
             opaqueId: this.opaqueId, 
@@ -200,6 +208,7 @@ class _VideoRoomPage extends State<VideoRoomPage>{
     this._signal.joinRoom(
       data: data, 
       body: body, 
+      display: this.displayName,
       onJoined: (handle){
         //　createOffer
         this.onPublisherJoined(handle);
@@ -212,10 +221,10 @@ class _VideoRoomPage extends State<VideoRoomPage>{
 
   /// 创建对等连接　关联媒体信息　发送sdp(createOffer)
   void onPublisherJoined(JanusHandle handle) async{
+    this.selfHandleId = handle.handleId;
     this._localStream ??= await this.createStream();
     JanusConnection jc = await createJanusConnection(handle: handle);
-    selfHandleId = handle.handleId;
-
+    debugPrint('selfHandleId====>$selfHandleId');
     // createOffer
     Map body = {"request": "configure", "audio": true, "video": true};
     RTCSessionDescription sdp = await jc.createOffer();
@@ -253,6 +262,7 @@ class _VideoRoomPage extends State<VideoRoomPage>{
   Future<JanusConnection> createJanusConnection({@required JanusHandle handle}) async {
     
     JanusConnection jc = JanusConnection(handleId: handle.handleId, iceServers: iceServers, display: handle.display);
+    debugPrint('创建对等连接===>${this.peerConnectionMap.length} ====${handle.handleId}');
     this.peerConnectionMap[handle.handleId] = jc;
     await jc.initConnection();
     
