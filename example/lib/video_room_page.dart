@@ -22,7 +22,8 @@ class _VideoRoomPage extends State<VideoRoomPage>{
 
   int room = 1234;
   // String url = 'wss://janus.onemandev.tech/websocket';
-  String url = 'wss://janus.conf.meetecho.com/ws';
+  // String url = 'wss://janus.conf.meetecho.com/ws';
+  String url = 'ws://192.168.1.4:8188/janus';
   bool withCredentials = false;
   String apiSecret = "SecureIt";
   String displayName = 'dumei';
@@ -55,12 +56,16 @@ class _VideoRoomPage extends State<VideoRoomPage>{
   int _mypvtid;
 
   @override
-  void dispose() {
-
+  void deactivate() {
+    super.deactivate();
     this.peerConnectionMap?.forEach((key, jc) => jc.disConnect());
     this._localRenderer?.dispose();
     this._localStream?.dispose();
     this._signal?.disconnect();
+  }
+
+  @override
+  void dispose() {
     super.dispose();
 
   }
@@ -133,8 +138,8 @@ class _VideoRoomPage extends State<VideoRoomPage>{
                 },
                 onLeaving: (JanusHandle handle,){
                   // 移除远程媒体
-                  this.peerConnectionMap[feed]?.disConnect();
-                  this.peerConnectionMap.remove(feed);
+                  this.peerConnectionMap[handle.handleId]?.disConnect();
+                  this.peerConnectionMap.remove(handle.handleId);
                   setState(() {});
                 }
               );
@@ -144,7 +149,9 @@ class _VideoRoomPage extends State<VideoRoomPage>{
         });
       }
 
-      feedHandle?.onLeaving(feedHandle);
+      if(feedHandle != null) {
+        feedHandle.onLeaving(feedHandle);
+      }
       // jsep：事件携带的sdp
       if(jsep != null) {
         handle.onRemoteJsep(handle, jsep);
@@ -195,7 +202,7 @@ class _VideoRoomPage extends State<VideoRoomPage>{
       body: body, 
       onJoined: (handle){
         //　createOffer
-        this.onPublisherJoined(handle.handleId);
+        this.onPublisherJoined(handle);
       },
       onRemoteJsep: (handle, jsep){
         onPublisherRemoteJsep(handle.handleId, jsep);
@@ -204,17 +211,17 @@ class _VideoRoomPage extends State<VideoRoomPage>{
   }
 
   /// 创建对等连接　关联媒体信息　发送sdp(createOffer)
-  void onPublisherJoined(int handleId) async{
+  void onPublisherJoined(JanusHandle handle) async{
     this._localStream ??= await this.createStream();
-    JanusConnection jc = await createJanusConnection(handleId: handleId);
-    selfHandleId = handleId;
+    JanusConnection jc = await createJanusConnection(handle: handle);
+    selfHandleId = handle.handleId;
 
     // createOffer
     Map body = {"request": "configure", "audio": true, "video": true};
     RTCSessionDescription sdp = await jc.createOffer();
     Map<String, dynamic> jsep = sdp.toMap();
     this._signal.sendMessage(
-      handleId: handleId,
+      handleId: handle.handleId,
       body: body,
       jsep: jsep
     );
@@ -230,7 +237,7 @@ class _VideoRoomPage extends State<VideoRoomPage>{
   /// 观察者处理远端媒体信息
   void subscriberHandleRemoteJsep(JanusHandle handle, Map<String, dynamic> jsep) async {
     this._localStream ??= await this.createStream();
-    JanusConnection jc = await createJanusConnection(handleId: handle.handleId);
+    JanusConnection jc = await createJanusConnection(handle: handle);
     jc.setRemoteDescription(jsep);
 
     RTCSessionDescription sdp = await jc.createAnswer();
@@ -243,10 +250,10 @@ class _VideoRoomPage extends State<VideoRoomPage>{
   }
 
   /// 创建对等连接
-  Future<JanusConnection> createJanusConnection({@required int handleId}) async {
+  Future<JanusConnection> createJanusConnection({@required JanusHandle handle}) async {
     
-    JanusConnection jc = JanusConnection(handleId: handleId, iceServers: iceServers);
-    this.peerConnectionMap[handleId] = jc;
+    JanusConnection jc = JanusConnection(handleId: handle.handleId, iceServers: iceServers, display: handle.display);
+    this.peerConnectionMap[handle.handleId] = jc;
     await jc.initConnection();
     
     jc.addLocalStream(this._localStream);
@@ -259,7 +266,7 @@ class _VideoRoomPage extends State<VideoRoomPage>{
     };
     jc.onIceCandidate = (connection,  candidate){
       Map candidateMap = candidate != null ? candidate.toMap() : {"completed": true}; 
-      this._signal.trickleCandidata(handleId: handleId, candidate: candidateMap);
+      this._signal.trickleCandidata(handleId: handle.handleId, candidate: candidateMap);
     };
 
     return jc;
@@ -307,12 +314,13 @@ class _VideoRoomPage extends State<VideoRoomPage>{
     Positioned localView = Positioned(
       left: 20.0,
       top: 20.0,
-      child: Container(
-        width: orientation == Orientation.portrait ? 90.0 : 120.0,
-        height: orientation == Orientation.portrait ? 120.0 : 90.0,
-        child: RTCVideoView(_localRenderer),
-        decoration: new BoxDecoration(color: Colors.black54),
-      ),
+      // child: Container(
+      //   width: orientation == Orientation.portrait ? 90.0 : 120.0,
+      //   height: orientation == Orientation.portrait ? 120.0 : 90.0,
+      //   child: RTCVideoView(_localRenderer),
+      //   decoration: new BoxDecoration(color: Colors.black54),
+      // ),
+      child: this._buildVideoWidget(orientation, _localRenderer, this.displayName),
     );
     views.add(localView);
 
@@ -322,13 +330,14 @@ class _VideoRoomPage extends State<VideoRoomPage>{
       if (key != selfHandleId) {
         Positioned v = Positioned(
           left: 20.0 + 120 * ix,
-          top: 20.0 + 130 * iy,
-          child: Container(
-            width: orientation == Orientation.portrait ? 90.0 : 120.0,
-            height: orientation == Orientation.portrait ? 120.0 : 90.0,
-            child: RTCVideoView(value.remoteRenderer),
-            decoration: BoxDecoration(color: Colors.black54),
-          ),
+          top: 20.0 + (130.0 + 30.0) * iy,
+          // child: Container(
+          //   width: orientation == Orientation.portrait ? 90.0 : 120.0,
+          //   height: orientation == Orientation.portrait ? 120.0 : 90.0,
+          //   child: RTCVideoView(value.remoteRenderer),
+          //   decoration: BoxDecoration(color: Colors.black54),
+          // ),
+          child: this._buildVideoWidget(orientation, value.remoteRenderer, value.display),
         );
         ix += 1;
         if (ix == 3) {
@@ -342,7 +351,24 @@ class _VideoRoomPage extends State<VideoRoomPage>{
     return views;
   }
 
-  
+  Widget _buildVideoWidget(orientation, RTCVideoRenderer renderer, String display){
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        Container(
+          width: orientation == Orientation.portrait ? 90.0 : 120.0,
+          height: orientation == Orientation.portrait ? 120.0 : 90.0,
+          child: RTCVideoView(renderer),
+          decoration: BoxDecoration(color: Colors.black54),
+        ),
+        Container(
+          alignment: Alignment.center,
+          height: 30.0,
+          child: Text('$display'),
+        )
+      ],
+    );
+  }
   
 
 }

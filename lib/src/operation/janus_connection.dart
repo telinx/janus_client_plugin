@@ -46,6 +46,8 @@ class JanusConnection {
 
   int handleId;                   // janus句柄ID
 
+  String display;                 // 昵称
+
   RTCPeerConnection _connection;  // 当前peer连接对象
 
   RTCVideoRenderer remoteRenderer;  // 远程媒体数据渲染器
@@ -59,7 +61,7 @@ class JanusConnection {
   OnIceCandidateCallback onIceCandidate;
 
 
-  JanusConnection({@required this.handleId, this.iceServers}) {
+  JanusConnection({@required this.handleId, this.iceServers, this.display}) {
     this.remoteRenderer = RTCVideoRenderer();
     this.remoteRenderer.mirror = true;
   }
@@ -71,9 +73,10 @@ class JanusConnection {
   }
 
   void disConnect(){
+    debugPrint('JanusConnection disConnect===$display====$handleId');
+    this._connection.close();
     this.remoteStream?.dispose();
     this.remoteRenderer?.dispose();
-    this._connection?.dispose();
   }
 
   /// 设置本地会话描述添加到RTCPeerConnection

@@ -132,6 +132,7 @@ class JanusSignal {
   
   /// 信令获得连接
   void connect(){
+    debugPrint('janus connect===========>${this._url}');
     Iterable<String> it = ['janus-protocol'];
     this._channel = IOWebSocketChannel.connect(this._url, protocols: it);
     this._sink = this._channel.sink;
@@ -149,6 +150,7 @@ class JanusSignal {
 
   /// websocket断开链接
   void disconnect() {
+    debugPrint('janus disconnect===========>${this._url}');
     this._channel.sink.close();
   }
 
@@ -321,10 +323,10 @@ class JanusSignal {
       case 'event': {
         debugPrint('$_kJanus handleMessage event: $message');
         JanusHandle handle = this._handleMap[message['sender']];
-        if(handle == null){
-          print('missing handle');
-          break;
-        }
+        // if(handle == null){
+        //   print('missing handle');
+        //   break;
+        // }
         Map<String, dynamic> plugin = message['plugindata']['data'];
         JanusHandle feedHandle;
         if(plugin['leaving'] != null){  // 有人离开
