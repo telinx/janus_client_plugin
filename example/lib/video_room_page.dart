@@ -114,9 +114,11 @@ class _VideoRoomPage extends State<VideoRoomPage>{
 
           int feed = publisher['id'];
           String display = publisher['display'];
-          debugPrint('stop1====>${this._signal.sessionId}==$feed==${this.selfHandleId}===${handle.handleId}');
-          if(this.selfHandleId != handle.handleId && this.peerConnectionMap[handle.handleId] != null) {
-            debugPrint('stop2====>${this._signal.sessionId}==$feed==${this.selfHandleId}===${handle.handleId}');
+
+          // }
+          debugPrint('stop1====>${this._signal.sessionId}==$feed==${this.displayName}===$display');
+          if(this._signal.sessionId == feed && this.displayName == display){
+            debugPrint('stop2====>${this._signal.sessionId}==$feed==${this.displayName}===$display');
             return;
           }
 
@@ -146,8 +148,8 @@ class _VideoRoomPage extends State<VideoRoomPage>{
                 },
                 onLeaving: (JanusHandle handle,){
                   // 移除远程媒体
-                  this.peerConnectionMap[handle.handleId]?.disConnect();
-                  this.peerConnectionMap.remove(handle.handleId);
+                  this.peerConnectionMap[handle.feedId]?.disConnect();
+                  this.peerConnectionMap.remove(handle.feedId);
                   setState(() {});
                 }
               );
@@ -214,7 +216,7 @@ class _VideoRoomPage extends State<VideoRoomPage>{
         this.onPublisherJoined(handle);
       },
       onRemoteJsep: (handle, jsep){
-        onPublisherRemoteJsep(handle.handleId, jsep);
+        onPublisherRemoteJsep(handle, jsep);
       }
     );
   }
@@ -238,8 +240,8 @@ class _VideoRoomPage extends State<VideoRoomPage>{
 
   /// 处理远程发布者接受到的远端媒体信息
   /// 创建对等链接　关联媒体数据　发生sdp(createOffer)
-  void onPublisherRemoteJsep(int handleId, Map jsep){
-    JanusConnection jc = this.peerConnectionMap[handleId];
+  void onPublisherRemoteJsep(JanusHandle handle, Map jsep){
+    JanusConnection jc = this.peerConnectionMap[handle.feedId];
     jc.setRemoteDescription(jsep);
   }
 
@@ -263,7 +265,7 @@ class _VideoRoomPage extends State<VideoRoomPage>{
     
     JanusConnection jc = JanusConnection(handleId: handle.handleId, iceServers: iceServers, display: handle.display);
     debugPrint('创建对等连接===>${this.peerConnectionMap.length} ====${handle.handleId}');
-    this.peerConnectionMap[handle.handleId] = jc;
+    this.peerConnectionMap[handle.feedId] = jc;
     await jc.initConnection();
     
     jc.addLocalStream(this._localStream);
@@ -337,7 +339,7 @@ class _VideoRoomPage extends State<VideoRoomPage>{
     int ix = 1;
     int iy = 0;
     peerConnectionMap.forEach((key, value) {
-      if (key != selfHandleId) {
+      if (key != this._signal.sessionId) {
         Positioned v = Positioned(
           left: 20.0 + 120 * ix,
           top: 20.0 + (130.0 + 30.0) * iy,

@@ -18,7 +18,7 @@ class JanusHandle {
 
   int handleId;     // Janus句柄（处理＼操作数据的方法）Id
 
-  int feedId;       // 远程流ID
+  int feedId;       // janus会话session_id  
 
   String display;   // 昵称显示
 

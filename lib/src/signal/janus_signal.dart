@@ -251,9 +251,12 @@ class JanusSignal {
     handle.onLeaving = onLeaving;
     handle.display = display ?? this._display;
 
-    if(feedId != null){
+    // 设置handle的session_id,　不是远程的session_id就是自己的session_id
+    if(feedId != null){                 
       handle.feedId = feedId;
       this._feedMap[feedId] = handle;
+    } else{
+      handle.feedId = this.sessionId;
     }
     
     this._handleMap[handle.handleId] = handle;
