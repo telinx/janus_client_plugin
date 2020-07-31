@@ -6,6 +6,7 @@ import 'dart:ffi';
 import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
+import 'package:janus_client_plugin/janus_client_plugin.dart';
 import 'package:random_string/random_string.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -42,6 +43,8 @@ class JanusSignal {
   String _kJanus = 'janus';
   
   int _sessionId = -1;
+
+  int _handleId = -1;
 
   // websocket服务器地址
   String _url;   
@@ -84,7 +87,9 @@ class JanusSignal {
   
   JsonDecoder _decoder = JsonDecoder();
 
-  get sessionId => this._sessionId;
+  get handleId => this._handleId;       // self handleId
+
+  get sessionId => this._sessionId;     // self session
 
   set sessionId(int sessionId) => this._sessionId = sessionId;
 
@@ -153,17 +158,18 @@ class JanusSignal {
   /// websocket断开链接
   void disconnect() {
     debugPrint('janus disconnect===========>${this._url}');
-    this._channel.sink.close();
+    this._sink.close();
   }
 
   /// 发送message给janus
   void sendMessage({
     @required int handleId,
     @required Map body, 
-    Map jsep, 
+    Map jsep,
+    String transaction 
   }){
 
-    String transaction = randomAlphaNumeric(12);
+    transaction ??= randomAlphaNumeric(12);
     Map<String, dynamic> msgMap = {
       "janus": "message",
       "body": body,
@@ -180,9 +186,8 @@ class JanusSignal {
 
   /// 公共消息发送
   void send(Map map) {
-
+    debugPrint('janus client send=====>>>>>>$map');
     String json = this._encoder.convert(map);
-    debugPrint(json);
     this._sink.add(json);
 
   }
@@ -220,7 +225,12 @@ class JanusSignal {
     String transaction = randomAlphaNumeric(12);
     JanusTransaction jt = JanusTransaction(tid: transaction);
 
-    jt.success = success;
+    jt.success =  (data){
+      this._handleId = data['data']['id'];
+      debugPrint('janus attach success=====data: $data======>handleId: ${this._handleId}');
+      this._handleMap[this._handleId] = JanusHandle(handleId: this._handleId);
+      success(data);
+    } ;
     jt.error = error;
     _transMap[transaction] = jt;
 
@@ -244,8 +254,8 @@ class JanusSignal {
     OnRemoteJsep onRemoteJsep,
     OnLeaving onLeaving,
   }) {
-    JanusHandle handle = JanusHandle();
-    handle.handleId = data['data']['id']; // sessionId
+    dynamic senderSessionId = data['data']['id']; // sessionId
+    JanusHandle handle = this._handleMap[senderSessionId] ?? JanusHandle(handleId: senderSessionId);
     handle.onJoined = onJoined;
     handle.onRemoteJsep = onRemoteJsep;
     handle.onLeaving = onLeaving;
@@ -297,9 +307,9 @@ class JanusSignal {
   /// 处理janus服务器返回消息
   void handleMessage(Map<dynamic, dynamic> message) {
     String janus = message[this._kJanus];
+    debugPrint('$_kJanus handleMessage $janus');
     switch(janus){
       case 'success': {
-        debugPrint('$_kJanus handleMessage success: $message');
         String transaction = message['transaction'];
         JanusTransaction jt = this._transMap[transaction];
         if(null != jt && jt.success != null) {
@@ -310,7 +320,6 @@ class JanusSignal {
       break;
 
       case 'error': {
-        debugPrint('$_kJanus handleMessage error: $message');
         String transaction = message['transaction'];
         JanusTransaction jt = this._transMap[transaction];
         if(null != jt && jt.error != null) {
@@ -321,18 +330,28 @@ class JanusSignal {
       break;
 
       case 'ack': {
-        debugPrint('$_kJanus handleMessage ack: $message');
       }
       break;
 
       case 'event': {
-        debugPrint('$_kJanus handleMessage event: $message');
-        JanusHandle handle = this._handleMap[message['sender']];
-        // if(handle == null){
-        //   print('missing handle');
-        //   break;
-        // }
         Map<String, dynamic> plugin = message['plugindata']['data'];
+        
+        // 创建房间成功　失败执行方法
+        String transaction = message['transaction'];
+        JanusTransaction jt = this._transMap[transaction];
+        if(null != plugin && null != jt){
+          if(null != plugin['error']){
+            debugPrint('$_kJanus handleMessage event error====>: ${plugin['error']}');
+            jt.error(plugin);
+          }else{
+            jt?.success(plugin);
+          }
+          this._transMap.remove(transaction);
+        }
+        
+
+        JanusHandle handle = this._handleMap[message['sender']];
+        
         JanusHandle feedHandle;
         if(plugin['leaving'] != null){  // 有人离开
           feedHandle = this._feedMap[plugin['leaving']];
@@ -364,6 +383,19 @@ class JanusSignal {
 
   }
 
-  
+  /// 房间创建销毁等逻辑
+  void videoRoomHandle({ 
+    @required RoomReq req, 
+    @required TransactionSuccess success, 
+    @required TransactionError error
+  }){
+    JanusHandle handle = this._handleMap[this._handleId];
+    String transaction = randomAlphaNumeric(12);
+    JanusTransaction jt = JanusTransaction(tid: transaction);
+    jt.success = success;
+    jt.error = error;
+    this._transMap[transaction] = jt;
+    this.sendMessage(handleId: handle.handleId, body: req.toMap(), transaction: transaction);
+  }
 
 }

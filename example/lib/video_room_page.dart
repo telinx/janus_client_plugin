@@ -20,7 +20,7 @@ class VideoRoomPage extends StatefulWidget {
 
 class _VideoRoomPage extends State<VideoRoomPage>{
 
-  int room = 1234;
+  int room = 12345678;
   // String url = 'wss://janus.onemandev.tech/websocket';
   // String url = 'wss://janus.conf.meetecho.com/ws';
   String url = 'ws://192.168.1.4:8188/janus';
@@ -184,8 +184,9 @@ class _VideoRoomPage extends State<VideoRoomPage>{
         this._signal.attach(
           plugin: 'janus.plugin.videoroom',
           opaqueId: opaqueId,
-          success: (Map<String, dynamic> data) {
-            this.joinRoom(data);
+          success: (Map<String, dynamic> attachData) {
+            // this.joinRoom(data);
+            this.checkRoom(attachData);
           },
           error: (Map<String, dynamic> data) {
             debugPrint('join room failed...');
@@ -198,6 +199,34 @@ class _VideoRoomPage extends State<VideoRoomPage>{
     );
   }
 
+  /// 检测房间，房间不在则创建
+  void checkRoom(Map<String, dynamic> attachData){
+    this._signal.videoRoomHandle(
+      req: RoomReq(request: 'exists', room: this.room),
+      success: (data){
+        debugPrint('exists room=====>>>>>>$data');
+        if(null != data['plugindata']['data'] &&  data['plugindata']['data']['exists']){
+          this.joinRoom(attachData);
+        }else {
+          this._signal.videoRoomHandle(
+            req: RoomReq(request: 'create', room: this.room, description: 'this is my room'),
+            success: (data){
+              debugPrint('create room=====>>>>>>$data');
+              this.joinRoom(attachData);
+            },
+            error: (data){
+              print('create room error========>$data');
+            }
+          );
+        }
+      },
+      error: (data){
+        print('find room error========>$data');
+      }
+    );
+          
+  }
+
   /// 加入房间
   void joinRoom(Map<String, dynamic> data){
     Map<String, dynamic> body ={
@@ -205,6 +234,8 @@ class _VideoRoomPage extends State<VideoRoomPage>{
       "room": this.room,
       "ptype": "publisher",
       "display": this.displayName,
+      'secret': '',
+      'pin': ''
     };
 
     this._signal.joinRoom(
