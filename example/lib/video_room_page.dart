@@ -335,6 +335,31 @@ class _VideoRoomPage extends State<VideoRoomPage>{
     return stream;
   }
 
+  /// 离开room
+  void leave(){
+    if(this.peerConnectionMap.length == 1){
+      this._signal.videoRoomHandle(
+        req: RoomReq(request: 'destroy', room: this.room), 
+        success: (data){
+          debugPrint('leave destroy room success====$data>');
+          this._signal.sendMessage(
+            handleId: this.selfHandleId, 
+            body: RoomLeaveReq().toMap(),
+          );
+        }, 
+        error: (data){
+          debugPrint('leave destroy room ====$data>');
+        }
+      );
+    }else{
+      this._signal.sendMessage(
+        handleId: this.selfHandleId, 
+        body: RoomLeaveReq().toMap(),
+      );
+    }
+    
+  }
+
 
    @override
   Widget build(BuildContext context) {

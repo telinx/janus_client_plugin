@@ -15,7 +15,7 @@
 import 'package:flutter/cupertino.dart';
 
 enum RoomAction {
-  create, destroy, edit , exists, list, allowed, kick
+  create, destroy, edit , exists, list, allowed, kick, listparticipants
 }
 
 class RoomReq {
