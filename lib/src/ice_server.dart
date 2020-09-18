@@ -8,8 +8,8 @@ class RTCIceServer {
 //<editor-fold desc="Data Methods" defaultstate="collapsed">
 
   RTCIceServer({
-    @required this.username,
-    @required this.credential,
+    this.username,
+    this.credential,
     @required this.url,
   });
 
@@ -46,12 +46,25 @@ class RTCIceServer {
     );
   }
 
+  // Map<String, dynamic> toMap() {
+  //   return {
+  //     'username': this.username,
+  //     'credential': this.credential,
+  //     'url': this.url,
+  //   };
+  // }
+
   Map<String, dynamic> toMap() {
-    return {
-      'username': this.username,
-      'credential': this.credential,
+    Map<String, dynamic> map = <String, dynamic>{
       'url': this.url,
     };
+    if(null != this.username && this.username.length > 0) {
+      map['username'] = this.username;
+    }
+    if(null != this.credential && this.credential.length > 0) {
+      map['credential'] = this.credential;
+    }
+    return map;
   }
 
   factory RTCIceServer.fromMap(Map<String, dynamic> map) {

@@ -13,7 +13,10 @@ dependencies:
     sdk: flutter
   random_string: ^1.1.0
   web_socket_channel: ^1.1.0
-  flutter_webrtc: ^0.2.8
+  # flutter_webrtc: ^0.3.3
+  flutter_webrtc:
+    git:
+      https://github.com/flutter-webrtc/flutter-webrtc.git
 
 
 dev_dependencies:

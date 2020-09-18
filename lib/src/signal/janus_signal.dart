@@ -3,10 +3,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
-import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
-import 'package:janus_client_plugin/janus_client_plugin.dart';
 import 'package:random_string/random_string.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -37,14 +35,24 @@ import '../operation/janus_transaction.dart';
 
 typedef Void OnMessage(JanusHandle handle, Map plugin, Map jsep, JanusHandle feedHandle);
 
+typedef void ChangeDisplay(int feedId, String display);
+
+typedef void EndMeeting();
+
+typedef void NotifyTalking(int feedId);
+
 /// janus信令处理
 class JanusSignal {
+
+  bool disConnected = false;
 
   String _kJanus = 'janus';
   
   int _sessionId = -1;
 
   int _handleId = -1;
+
+  int _roomId;
 
   // websocket服务器地址
   String _url;   
@@ -60,6 +68,12 @@ class JanusSignal {
 
   // websocket信息回调处理
   OnMessage _onMessage;
+
+  ChangeDisplay _changeDisplay;
+
+  EndMeeting _endMeeting;
+
+  NotifyTalking _notifyTalking;
 
   // websocket channel
   IOWebSocketChannel _channel;
@@ -91,7 +105,11 @@ class JanusSignal {
 
   get sessionId => this._sessionId;     // self session
 
+  get handleMap => this._handleMap;     // self session
+
   set sessionId(int sessionId) => this._sessionId = sessionId;
+
+  set roomId(int roomId) => this._roomId = roomId;
 
   set url(String url) => this._url = url;
 
@@ -103,6 +121,12 @@ class JanusSignal {
 
   set onMessage(OnMessage onMessage) => this._onMessage = onMessage;
 
+  set changeDisplay(ChangeDisplay changeDisplay) => this._changeDisplay = changeDisplay;
+
+  set endMeeting(EndMeeting endMeeting) => this._endMeeting = endMeeting;
+
+  set notifyTalking(NotifyTalking notifyTalking) => this._notifyTalking = notifyTalking;
+
   set display(String display) => this._display = display;
 
   set refreshInterval(int refreshInterval) => this._refreshInterval = refreshInterval;
@@ -113,6 +137,9 @@ class JanusSignal {
 
   JanusSignal._();
 
+  Timer keepApliveTimer;
+
+
   static JanusSignal _instance;
   /// 单例
   static JanusSignal getInstance({
@@ -122,6 +149,7 @@ class JanusSignal {
     bool withCredentials,
     String display,
     int refreshInterval = 20,
+    disConnected = false,
   }) {
     if (_instance == null) {
       _instance = JanusSignal._();
@@ -132,7 +160,7 @@ class JanusSignal {
     if(withCredentials != null) _instance.withCredentials = withCredentials;
     if(display != null) _instance.display = display;
     if(refreshInterval != null) _instance.refreshInterval = refreshInterval;
-    
+    if(disConnected != null) _instance.disConnected = disConnected;
     return _instance;
   }
 
@@ -147,7 +175,9 @@ class JanusSignal {
     this._stream = this._channel.stream;
     this._stream.listen((message) {
       debugPrint('$_kJanus receieve: $message');
-      this.handleMessage(this._decoder.convert(message));
+      if(null != message){
+        this.handleMessage(this._decoder.convert(message));
+      }
     }).onDone(() {
       print('closed　by server');
     });
@@ -157,8 +187,10 @@ class JanusSignal {
 
   /// websocket断开链接
   void disconnect() {
-    debugPrint('janus disconnect===========>${this._url}');
+    debugPrint('janus disconnect===========>$disConnected');
+    this.keepApliveTimer?.cancel();
     this._sink.close();
+    this.disConnected = true;
   }
 
   /// 发送message给janus
@@ -186,6 +218,10 @@ class JanusSignal {
 
   /// 公共消息发送
   void send(Map map) {
+    debugPrint('janus disconnect====send=======>$disConnected');
+    if(this.disConnected){
+      return;
+    }
     debugPrint('janus client send=====>>>>>>$map');
     String json = this._encoder.convert(map);
     this._sink.add(json);
@@ -200,7 +236,7 @@ class JanusSignal {
     jt.success = (Map data){
       debugPrint('createSession seuccess');
       this.sessionId = data['data']['id'];
-      // this.keepAlive();
+      this.keepAlive();
       success(data);
     };
     jt.error = error;
@@ -253,12 +289,14 @@ class JanusSignal {
     OnJoined onJoined,
     OnRemoteJsep onRemoteJsep,
     OnLeaving onLeaving,
+    OnKicked onKicked,
   }) {
     dynamic senderSessionId = data['data']['id']; // sessionId
     JanusHandle handle = this._handleMap[senderSessionId] ?? JanusHandle(handleId: senderSessionId);
     handle.onJoined = onJoined;
     handle.onRemoteJsep = onRemoteJsep;
     handle.onLeaving = onLeaving;
+    handle.onKicked = onKicked;
     handle.display = display ?? this._display;
 
     // 设置handle的session_id,　不是远程的session_id就是自己的session_id
@@ -297,7 +335,7 @@ class JanusSignal {
       ...this._apiMap,
       ...this._tokenMap,
     };
-    Timer.periodic(Duration(seconds: this._refreshInterval), (timer) { 
+    this.keepApliveTimer =  Timer.periodic(Duration(seconds: this._refreshInterval), (timer) { 
       aliveMap['transaction'] = randomNumeric(12);
       this.send(aliveMap);
     });
@@ -334,7 +372,23 @@ class JanusSignal {
       break;
 
       case 'event': {
+
         Map<String, dynamic> plugin = message['plugindata']['data'];
+
+        if(plugin['videoroom']  == 'talking' && null != this._notifyTalking) {
+          this._notifyTalking(plugin['id']);
+          return;
+        }
+
+        if(plugin['videoroom']  == 'destroyed' && null != this._endMeeting) {
+          this._endMeeting();
+          return;
+        }
+
+        if(null != this._handleMap[plugin['id']] && null != plugin['id'] && null != plugin['display'] && null != this._changeDisplay){
+          this._handleMap[plugin['id']].display = plugin['display'];
+          this._changeDisplay(plugin['id'], plugin['display']);
+        }
         
         // 创建房间成功　失败执行方法
         String transaction = message['transaction'];
@@ -353,14 +407,31 @@ class JanusSignal {
         JanusHandle handle = this._handleMap[message['sender']];
         
         JanusHandle feedHandle;
-        if(plugin['leaving'] != null){  // 有人离开
-          feedHandle = this._feedMap[plugin['leaving']];
+        if(plugin['leaving'] != null || plugin['kicked'] != null){  // 有人离开
+          if(plugin['leaving'] != null && null == plugin['reason']){    // 有人离开
+            feedHandle = this._feedMap[plugin['leaving']];
+          }
+          if(plugin['kicked'] != null && null == plugin['reason']){     // 有人被踢
+            feedHandle = this._feedMap[plugin['kicked']];
+          }
+          if(plugin['leaving'] != null && null != plugin['reason']){    // 自己被踢
+            feedHandle = this.handleMap[this.sessionId];
+          }
         }
         this._onMessage(handle, plugin, message["jsep"], feedHandle);
 
-        if(plugin['leaving'] != null){  // 有人离开,移除handle
-          this._feedMap.remove(plugin['leaving']);
-          this._handleMap.remove(message['sender']);
+        if(plugin['leaving'] != null && null == plugin['reason']) {  // 有人离开,移除handle  
+          // this._feedMap.remove(plugin['leaving']);
+          // this._handleMap.remove(message['sender']);
+          this._feedMap.remove(feedHandle.feedId);
+          this._handleMap.remove(feedHandle.handleId);
+        }
+
+        if(plugin['kicked'] != null && null == plugin['reason']){   // 将某人踢掉,移除handle
+          // this._feedMap.remove(plugin['kicked']);
+          // this._handleMap.remove(message['sender']);
+          this._feedMap.remove(feedHandle.feedId);
+          this._handleMap.remove(feedHandle.handleId);
         }
       }
       break;
@@ -385,7 +456,7 @@ class JanusSignal {
 
   /// 房间创建销毁等逻辑
   void videoRoomHandle({ 
-    @required RoomReq req, 
+    @required Map<String, dynamic> req, 
     @required TransactionSuccess success, 
     @required TransactionError error
   }){
@@ -395,7 +466,16 @@ class JanusSignal {
     jt.success = success;
     jt.error = error;
     this._transMap[transaction] = jt;
-    this.sendMessage(handleId: handle.handleId, body: req.toMap(), transaction: transaction);
+    this.sendMessage(handleId: handle.handleId, body: req, transaction: transaction);
   }
+
+  // /// 获取用户
+  // void getParticipants(){
+  //   Map<String, dynamic> req = <String, dynamic>{
+  //     "request" : "listparticipants",
+  //     "room" : this._roomId,
+  //   };
+  //   this.videoRoomHandle
+  // }
 
 }

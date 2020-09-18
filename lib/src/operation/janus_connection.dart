@@ -1,5 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter_webrtc/webrtc.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../ice_server.dart';
 
@@ -17,10 +17,18 @@ const Map<String, dynamic> _config = {
   ],
 };
 
-const Map<String, dynamic> _constraints = {
+const Map<String, dynamic> constraints = {
   'mandatory': {
     'OfferToReceiveAudio': true,
     'OfferToReceiveVideo': true,
+  },
+  'optional': [],
+};
+
+const Map<String, dynamic> noVideoconstraints = {
+  'mandatory': {
+    'OfferToReceiveAudio': true,
+    'OfferToReceiveVideo': false,
   },
   'optional': [],
 };
@@ -46,24 +54,47 @@ class JanusConnection {
 
   int handleId;                   // janus句柄ID
 
-  String display;                 // 昵称
-
-  RTCPeerConnection _connection;  // 当前peer连接对象
-
-  RTCVideoRenderer remoteRenderer;  // 远程媒体数据渲染器
-
-  MediaStream remoteStream;  // 远程媒体数据渲染器
-
   List<RTCIceServer> iceServers;
 
-  OnAddStreamCallback onAddStream;
+  String display;                 // 昵称
 
-  OnIceCandidateCallback onIceCandidate;
+  int feedId;                     // janus会话session_id   
+
+  bool remote;                    // 是否为远端对等连接（非己方）
+
+  bool videoPresent;              // 视频是否展示（显示有限的远端视频流）
+  
+  bool audio;                           // 音频状态
+
+  bool video;                           // 视频状态
+
+  int privateChatUnreadCount = 0;
+
+  RTCPeerConnection _connection;        // 当前peer连接对象
+
+  RTCVideoRenderer remoteRenderer;      // 远程媒体数据渲染器
+
+  MediaStream remoteStream;             // 远程媒体数据渲染器
+
+  OnAddStreamCallback onAddStream;      // 添加流
+
+  OnIceCandidateCallback onIceCandidate;  // ice
 
 
-  JanusConnection({@required this.handleId, this.iceServers, this.display}) {
+  JanusConnection({
+    @required this.handleId, 
+    this.iceServers, 
+    this.display, 
+    this.feedId,
+    this.audio = true,
+    this.video = true, 
+    this.remote = true, 
+    this.videoPresent = false,
+  }) {
+    debugPrint('JanusConnection init===$display==$feedId==$handleId');
     this.remoteRenderer = RTCVideoRenderer();
-    this.remoteRenderer.mirror = true;
+    // this.remoteRenderer.mirror = true;
+    // this.remoteRenderer.objectFit = RTCVideoViewObjectFit.RTCVideoViewObjectFitCover;
   }
 
   /// init连接，init远程媒体数据渲染器
@@ -73,14 +104,14 @@ class JanusConnection {
   }
 
   void disConnect(){
-    debugPrint('JanusConnection disConnect===$display====$handleId');
+    debugPrint('JanusConnection disConnect===$display==$feedId==$handleId');
     this._connection.close();
     this.remoteStream?.dispose();
     this.remoteRenderer?.dispose();
   }
 
   /// 设置本地会话描述添加到RTCPeerConnection
-  Future<RTCSessionDescription> createOffer({Map<String, dynamic> constraints = _constraints}) async {
+  Future<RTCSessionDescription> createOffer({Map<String, dynamic> constraints = constraints}) async {
     RTCSessionDescription sdp = await this._connection.createOffer(constraints);
     this._connection.setLocalDescription(sdp);
     return sdp;
@@ -95,11 +126,12 @@ class JanusConnection {
 
   /// 将本地流添加到RTCPeerConnection
   void addLocalStream(MediaStream localStream) {
+    debugPrint('addLocalStream=====>${this._connection}');
     this._connection.addStream(localStream);
   }
 
   /// 回复sdp
-  Future<RTCSessionDescription> createAnswer({Map<String, dynamic> constraints = _constraints}) async {
+  Future<RTCSessionDescription> createAnswer({Map<String, dynamic> constraints = constraints}) async {
     RTCSessionDescription sdp = await this._connection.createAnswer(constraints);
     // 通过setLocalDescription想浏览器通知会话描述，并将其发送之远程对等端，从而发起呼叫
     this._connection.setLocalDescription(sdp);

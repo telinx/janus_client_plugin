@@ -36,6 +36,14 @@ class RoomReq {
 
   List<dynamic> allowed;
 
+  int publishers;
+
+  bool audiolevelEvent;
+
+  int audioActivePackets;
+
+  int audioLevelAverage;
+
 
   RoomReq({
     @required this.request, 
@@ -45,7 +53,11 @@ class RoomReq {
     this.secret, 
     this.pin, 
     this.isPrivate = false, 
-    this.allowed
+    this.allowed,
+    this.publishers = 100,
+    this.audiolevelEvent = true,
+    this.audioActivePackets = 100,
+    this.audioLevelAverage = 25,
   });
 
   Map<String, dynamic> toMap() {
@@ -55,6 +67,8 @@ class RoomReq {
       'permanent': this.permanent,
       'description': this.description,
       'is_private': this.isPrivate,
+      'publishers': this.publishers,
+      'audiolevel_event': this.audiolevelEvent,
     };
     if(null != secret){
       map['secret'] = this.secret;
@@ -62,8 +76,14 @@ class RoomReq {
      if(null != pin){
       map['pin'] = this.pin;
     }
-     if(null != allowed){
+    if(null != allowed){
       map['allowed'] = this.allowed;
+    }
+    if(null != audioActivePackets){
+      map['audio_active_packets'] = this.audioActivePackets;
+    }
+    if(null != audioLevelAverage){
+      map['audio_level_average'] = this.audioLevelAverage;
     }
     return map;
   }

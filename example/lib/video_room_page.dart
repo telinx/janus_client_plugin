@@ -2,11 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:janus_client_plugin/janus_client_plugin.dart';
-import 'package:flutter_webrtc/get_user_media.dart';
-import 'package:flutter_webrtc/media_stream.dart';
-import 'package:flutter_webrtc/rtc_peerconnection.dart';
-import 'package:flutter_webrtc/rtc_session_description.dart';
-import 'package:flutter_webrtc/rtc_video_view.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:random_string/random_string.dart';
 
 
@@ -58,14 +54,16 @@ class _VideoRoomPage extends State<VideoRoomPage>{
   @override
   void deactivate() {
     super.deactivate();
-    this.peerConnectionMap?.forEach((key, jc) => jc.disConnect());
-    this._localRenderer?.dispose();
-    this._localStream?.dispose();
-    this._signal?.disconnect();
+   
   }
 
   @override
   void dispose() {
+    this.peerConnectionMap?.forEach((key, jc) => jc.disConnect());
+    this._localRenderer?.dispose();
+    this._localStream?.dispose();
+    this._signal?.disconnect();
+    this._signal = null;
     super.dispose();
 
   }
@@ -74,11 +72,16 @@ class _VideoRoomPage extends State<VideoRoomPage>{
   void initState() {
     super.initState();
     this._signal = JanusSignal.getInstance(url: url, apiSecret: apiSecret, withCredentials: withCredentials);
-
-    this._initRenderers();
-
      // 自定义janus回调event处理
     this.onMessage();
+    this._initRenderers();
+  }
+
+  /// 初始化视图
+  void _initRenderers() async{
+    await this._localRenderer.initialize();
+    this._localStream = await this.createStream();
+    this._localRenderer.srcObject = this._localStream;
     /*
     * 1.连接websocket服务器，success
     * 2.janus　create session, success
@@ -89,14 +92,7 @@ class _VideoRoomPage extends State<VideoRoomPage>{
     */
     this.connect();
     this.createSessionAndAttach();
-    
-  }
-
-  /// 初始化视图
-  void _initRenderers() async{
-    await this._localRenderer.initialize();
-    this._localStream = await this.createStream();
-    this._localRenderer.srcObject = this._localStream;
+    setState(() {});
   }
 
   ///　janus信令event处理
@@ -202,14 +198,14 @@ class _VideoRoomPage extends State<VideoRoomPage>{
   /// 检测房间，房间不在则创建
   void checkRoom(Map<String, dynamic> attachData){
     this._signal.videoRoomHandle(
-      req: RoomReq(request: 'exists', room: this.room),
+      req: RoomReq(request: 'exists', room: this.room).toMap(),
       success: (data){
         debugPrint('exists room=====>>>>>>$data');
         if(null != data['plugindata']['data'] &&  data['plugindata']['data']['exists']){
           this.joinRoom(attachData);
         }else {
           this._signal.videoRoomHandle(
-            req: RoomReq(request: 'create', room: this.room, description: 'this is my room'),
+            req: RoomReq(request: 'create', room: this.room, description: 'this is my room').toMap(),
             success: (data){
               debugPrint('create room=====>>>>>>$data');
               this.joinRoom(attachData);
@@ -331,7 +327,7 @@ class _VideoRoomPage extends State<VideoRoomPage>{
         'optional': [],
       }
     };
-    MediaStream stream = await navigator.getUserMedia(mediaConstraints);
+    MediaStream stream = await MediaDevices.getUserMedia(mediaConstraints);
     return stream;
   }
 
@@ -339,7 +335,7 @@ class _VideoRoomPage extends State<VideoRoomPage>{
   void leave(){
     if(this.peerConnectionMap.length == 1){
       this._signal.videoRoomHandle(
-        req: RoomReq(request: 'destroy', room: this.room), 
+        req: RoomReq(request: 'destroy', room: this.room).toMap(), 
         success: (data){
           debugPrint('leave destroy room success====$data>');
           this._signal.sendMessage(

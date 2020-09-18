@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:janus_client_plugin/janus_client_plugin.dart';
 
 /// JSEP（JavaScript Session Establishment Protocol，JavaScript会话建立协议），是一个信令控制协议。
 /// 从JSEP完成的功能来看，JSEP相当于一个软化的信令控制协议，只能完成媒体链接的功能，
@@ -17,6 +16,9 @@ typedef void OnRemoteJsep(JanusHandle handle, Map<String, dynamic> jsep);
 // 离开操作janus句柄处理
 typedef void OnLeaving(JanusHandle handle);
 
+// 被踢掉
+typedef void OnKicked(JanusHandle handle);
+
 class JanusHandle {
 
   int handleId;     // Janus句柄（处理＼操作数据的方法）Id
@@ -30,6 +32,8 @@ class JanusHandle {
   OnRemoteJsep onRemoteJsep;
 
   OnLeaving onLeaving;
+
+  OnKicked onKicked;
 
   // VideoRoomHandle videoRoomHandle;
 
