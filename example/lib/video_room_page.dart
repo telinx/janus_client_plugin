@@ -45,7 +45,6 @@ class _VideoRoomPage extends State<VideoRoomPage>{
 
   String opaqueId = 'videoroomtest-${randomString(12)}';
   Map<int, JanusConnection> peerConnectionMap = <int, JanusConnection>{};
-  RTCPeerConnection publisherPeerConnection;
 
   int selfHandleId = -1;
 
