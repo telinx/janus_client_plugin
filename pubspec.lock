@@ -56,7 +56,7 @@ packages:
       name: crypto
       url: "https://pub.flutter-io.cn"
     source: hosted
-    version: "2.1.4"
+    version: "2.1.5"
   fake_async:
     dependency: transitive
     description:
@@ -77,11 +77,9 @@ packages:
   flutter_webrtc:
     dependency: "direct main"
     description:
-      path: "."
-      ref: HEAD
-      resolved-ref: dce7e977bd131ffde80201d05e4fd94054abd7d5
-      url: "https://github.com/flutter-webrtc/flutter-webrtc.git"
-    source: git
+      name: flutter_webrtc
+      url: "https://pub.flutter-io.cn"
+    source: hosted
     version: "0.3.3"
   matcher:
     dependency: transitive
